@@ -1,0 +1,13 @@
+*.pth
+*.png
+*.gif
+*.jpg
+*.tar.gz
+*/venv
+*.pyc
+*.xml
+*.txt
+*.gz
+*.nii
+*.zip
+*.rar
