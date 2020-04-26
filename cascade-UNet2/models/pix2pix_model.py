@@ -21,8 +21,8 @@ def warp(source, offset_w, offset_h, interp='bilinear'):
     #    print('################### offset_h: {}'.format(offset_h.shape))
 
     # (h,w) + (N, h, w) add by broadcasting
-    grid_h = grid_h + offset_h * 2 / h
-    grid_w = grid_w + offset_w * 2 / w
+    grid_h = grid_h + offset_h
+    grid_w = grid_w + offset_w
 
     #    print('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')
     #    print(source.shape)

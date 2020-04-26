@@ -133,16 +133,26 @@ if __name__ == '__main__':
             gt = sitk.GetArrayFromImage(gt)
 
             gt_m = gt.copy().astype(np.float32)
-            gt_m[gt_m > 0] = 1
+            # gt_m[gt_m > 0] = 1
+
             tmp = convert_to_one_hot(gt_m)
             vals = np.unique(gt_m)
             results = []
-
             for i in range(len(tmp)):
                 results.append(resize_image(tmp[i].astype(float), spacing, spacing_target, 1)[None])
             gt_m = vals[np.vstack(results).argmax(0)]
 
-            real_m = src * gt_m
+
+            gt_mm = gt.copy().astype(np.float32)
+            gt_mm[gt_mm>0] = 1
+
+            tmp = convert_to_one_hot(gt_mm)
+            vals = np.unique(gt_mm)
+            results = []
+            for i in range(len(tmp)):
+                results.append(resize_image(tmp[i].astype(float), spacing, spacing_target, 1)[None])
+            gt_mm = vals[np.vstack(results).argmax(0)]
+            real_m = src * gt_mm
             real_m_backup = real_m.copy()
 
             c, h, w = src.shape
@@ -249,8 +259,8 @@ if __name__ == '__main__':
                 ES_gt = ES_imgs[4][1]
 
                 patient, phase = ED_imgs[3]
-                if '002' not in patient:
-                    continue
+                # if '002' not in patient:
+                #     continue
                 print(patient, phase)
 
 
