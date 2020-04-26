@@ -129,11 +129,12 @@ class Pix2PixModel(BaseModel):
             self.ED = input['ED'].to(self.device)
             self.ES = input['ES'].to(self.device)
             self.ED_gt = input['ED_gt'].to(self.device)
+            self.ED_M = input['ED_M'].to(self.device)
+            self.ES_M = input['ES_M'].to(self.device)
             if self.isTrain:
                 self.ED_gt = input['ED_gt'].to(self.device)
                 self.ES_gt = input['ES_gt'].to(self.device)
-                self.ED_M = input['ED_M'].to(self.device)
-                self.ES_M = input['ES_M'].to(self.device)
+
         else:
             self.real_A = input['A'].to(self.device)
             self.real_M = (input['M']).to(self.device)
@@ -263,8 +264,8 @@ class Pix2PixModel(BaseModel):
 
             # Third Network
 
-            self.fake_ED_ES = torch.cat((self.ED, self.fake_ED_M, self.ES, self.fake_ES_M), 1)
+            self.fake_ED_ES = torch.cat((self.ED, self.ED_M, self.ES, self.ES_M), 1)
             self.flow_2 = self.netG_3(self.fake_ED_ES)
-            self. warp_img = warp(self.ED, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='bilinear')
+            self.warp_img = warp(self.ED, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='bilinear')
             self.warped_mask = warp(self.ED_gt, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='nearest')
         return self.fake_ED_M, self.fake_ES_M, self.fake_ED_2, self.fake_ES_2, self.flow_2, self.warp_img, self.warped_mask

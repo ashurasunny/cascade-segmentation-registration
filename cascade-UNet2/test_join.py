@@ -60,16 +60,20 @@ def MSE(input, target):
     return ((input-target)**2).mean()
 
 
-def foward_network(a, b, ed_gt, model):
+def foward_network(a, b, a_, b_, ed_gt, model):
     print(a.shape, b.shape)
     a = np.expand_dims(a, axis=1)
     a = torch.from_numpy(a).to(model.device)
     b = np.expand_dims(b, axis=1)
     b = torch.from_numpy(b).to(model.device)
+    a_ = np.expand_dims(a_, axis=1)
+    a_ = torch.from_numpy(a_).to(model.device)
+    b_ = np.expand_dims(b_, axis=1)
+    b_ = torch.from_numpy(b_).to(model.device)
     ed_gt = np.expand_dims(ed_gt, axis=1)
     ed_gt = torch.from_numpy(ed_gt)
 
-    model.set_input({'ED':a, 'ES':b, 'ED_gt':ed_gt})
+    model.set_input({'ED':a, 'ES':b, 'ED_gt':ed_gt, 'ED_M':a_, 'ES_M':b_})
     fake_ED_M, fake_ES_M, fake_ED_2, fake_ES_2, flow_2, warp_img, warped_mask = model.test()  # run inference
     # output = softmax(output, dim=1)
     # output = torch.argmax(output, dim=1)
@@ -266,11 +270,11 @@ if __name__ == '__main__':
 
 
 
-                output1 = foward_network(ED_imgs[0][0], ES_imgs[0][0], ED_imgs[5][0],model)
-                output2 = foward_network(ED_imgs[0][1], ES_imgs[0][1], ED_imgs[5][1],model)
-                output3 = foward_network(ED_imgs[0][2], ES_imgs[0][2], ED_imgs[5][2],model)
-                output4 = foward_network(ED_imgs[0][3], ES_imgs[0][3], ED_imgs[5][3],model)
-                output5 = foward_network(ED_imgs[0][4], ES_imgs[0][4], ED_imgs[5][4],model)
+                output1 = foward_network(ED_imgs[0][0], ES_imgs[0][0], ED_imgs[1][0], ES_imgs[1][0], ED_imgs[5][0],model)
+                output2 = foward_network(ED_imgs[0][1], ES_imgs[0][1], ED_imgs[1][1], ES_imgs[1][1], ED_imgs[5][1],model)
+                output3 = foward_network(ED_imgs[0][2], ES_imgs[0][2], ED_imgs[1][2], ES_imgs[1][2], ED_imgs[5][2],model)
+                output4 = foward_network(ED_imgs[0][3], ES_imgs[0][3], ED_imgs[1][3], ES_imgs[1][3], ED_imgs[5][3],model)
+                output5 = foward_network(ED_imgs[0][4], ES_imgs[0][4], ED_imgs[1][4], ES_imgs[1][4], ED_imgs[5][4],model)
 
                 n_, h_, w_ = src_shape
                 probshape = [n_, 14, h_, w_]
