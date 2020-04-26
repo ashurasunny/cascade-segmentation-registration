@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
         for i in range(dataset_size):
 
-            data = get_epoch_batch(data_list, 1, i, idx, data_augmentation=True,
+            data = get_epoch_batch(data_list, 1, i, idx, data_augmentation=False,
                                              shift=10, rotate=0.2, scale=0.1, intensity=0.03, flip=False, norm=True)
 
             iter_start_time = time.time()  # timer for computation per iteration

@@ -54,20 +54,24 @@ def MSE(input, target):
     return ((input-target)**2).mean()
 
 
-def foward_network(a, m, model):
+def foward_network(a, b, model):
     a = np.expand_dims(a, axis=1)
     a = torch.from_numpy(a).to(model.device)
-    m = np.expand_dims(m, axis=1)
-    m = torch.from_numpy(m).to(model.device)
+    b = np.expand_dims(b, axis=1)
+    b = torch.from_numpy(b).to(model.device)
 
-    model.set_input({'A':a, 'M':m})
-    fake_M, fake_B_1, fake_B_2 = model.test()  # run inference
+    model.set_input({'ED':a, 'ES':b})
+    fake_ED_M, fake_ES_M, fake_ED_2, fake_ES_2, flow_2, warp_img, warped_mask = model.test()  # run inference
     # output = softmax(output, dim=1)
     # output = torch.argmax(output, dim=1)
-    fake_M = fake_M.data.to('cpu').numpy()
-    fake_B_1 = fake_B_1.data.to('cpu').numpy()
-    fake_B_2 = fake_B_2.data.to('cpu').numpy()
-    return np.concatenate([fake_M, fake_B_1, fake_B_2], axis=1)
+    fake_ED_M = fake_ED_M.data.to('cpu').numpy()
+    fake_ES_M = fake_ES_M.data.to('cpu').numpy()
+    fake_ED_2 = fake_ED_2.data.to('cpu').numpy()
+    fake_ES_2 = fake_ES_2.data.to('cpu').numpy()
+    flow_2 = flow_2.data.to('cpu').numpy()
+    warp_img = warp_img.data.to('cpu').numpy()
+    warped_mask = warped_mask.data.to('cpu').numpy()
+    return np.concatenate([fake_ED_M, fake_ES_M, fake_ED_2, fake_ES_2, flow_2, warp_img, warped_mask], axis=1)
 
 
 if __name__ == '__main__':
@@ -95,10 +99,15 @@ if __name__ == '__main__':
     hausdorffcomputer = sitk.HausdorffDistanceImageFilter()
 
     csv_name = './' + opt.name + '.csv'
+
+
+
+
+
     with open(csv_name, 'w+') as f:
         writer = csv.writer(f)
 
-        for iter in range(1,201):
+        for iter in range(200,201,5):
             opt.load_iter = iter
             model = create_model(opt)  # create a model given opt.model and other options
             model.setup(opt)  # regular setup: load and print networks; create schedulers
@@ -117,7 +126,7 @@ if __name__ == '__main__':
                 print(patient)
                 patient_root = os.path.join(opt.dataroot, patient)
 
-                for phase in ['ED', 'ES']:
+                for phase in ['ED']:
                     # read iamge
                     itk_image = sitk.ReadImage(os.path.join(patient_root, phase + '.nii.gz'))
                     spacing = np.array(itk_image.GetSpacing())[[2, 1, 0]]

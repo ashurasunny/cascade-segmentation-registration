@@ -125,12 +125,18 @@ class Pix2PixModel(BaseModel):
             input (dict): include the data itself and its metadata information.
         The option 'direction' can be used to swap images in domain A and domain B.
         """
-        self.ED = input['ED'].to(self.device)
-        self.ED_gt = input['ED_gt'].to(self.device)
-        self.ED_M = input['ED_M'].to(self.device)
-        self.ES = input['ES'].to(self.device)
-        self.ES_gt = input['ES_gt'].to(self.device)
-        self.ES_M = input['ES_M'].to(self.device)
+        if True:
+            self.ED = input['ED'].to(self.device)
+            self.ES = input['ES'].to(self.device)
+            self.ED_gt = input['ED_gt'].to(self.device)
+            if self.isTrain:
+                self.ED_gt = input['ED_gt'].to(self.device)
+                self.ES_gt = input['ES_gt'].to(self.device)
+                self.ED_M = input['ED_M'].to(self.device)
+                self.ES_M = input['ES_M'].to(self.device)
+        else:
+            self.real_A = input['A'].to(self.device)
+            self.real_M = (input['M']).to(self.device)
 
 
     def forward(self):
@@ -245,17 +251,20 @@ class Pix2PixModel(BaseModel):
 
     def test(self):
         with torch.no_grad():
-            self.fake_M = self.netG_1(self.real_A)
-            # self.real_AM = torch.cat((self.real_A, self.real_M), 1)
-            # self.fake_B_1 = self.netG_2(self.real_AM)
+            # First Network
+            self.fake_ED_M = self.netG_1(self.ED)
+            self.fake_ES_M = self.netG_1(self.ES)
 
-            # fake_M_2 = self.real_A.data.cpu().numpy()
-            # fake_M = self.fake_M.data.cpu().numpy()
-            # 
-            # fake_M_2[fake_M==0] = 0
+            # Second Network
+            self.fakel_ED_ED_M = torch.cat((self.ED, self.fake_ED_M), 1)
+            self.fake_ED_2 = self.netG_2(self.fakel_ED_ED_M)
+            self.fakel_ES_ES_M = torch.cat((self.ES, self.fake_ES_M), 1)
+            self.fake_ES_2 = self.netG_2(self.fakel_ES_ES_M)
 
-            # fake_M_2 = torch.from_numpy(fake_M_2)
+            # Third Network
 
-            self.fake_AM = torch.cat((self.real_A, self.fake_M), 1)
-            self.fake_B_2 = self.netG_2(self.fake_AM)
-        return self.fake_M, self.fake_B_2
+            self.fake_ED_ES = torch.cat((self.ED, self.fake_ED_M, self.ES, self.fake_ES_M), 1)
+            self.flow_2 = self.netG_3(self.fake_ED_ES)
+            self. warp_img = warp(self.ED, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='bilinear')
+            self.warped_mask = warp(self.ED_gt, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='nearest')
+        return self.fake_ED_M, self.fake_ES_M, self.fake_ED_2, self.fake_ES_2, self.flow_2, self.warp_img, self.warped_mask
