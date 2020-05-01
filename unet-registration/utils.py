@@ -191,6 +191,12 @@ def rescale_intensity(image, thres=(1.0, 99.0)):
     # image2 = (image - image.min()) / (image.max() - image.min())
     return image2
 
+def rescale_intensity_slice(image, thres):
+    Z = image.shape[0]
+    output = []
+    for z in range(Z):
+        output.append(rescale_intensity(image[z, :, :], thres))
+    return np.array(output)
 
 if __name__ == '__main__':
     data = np.load('/run/media/xxw993/Ashura/ACDC_XI/training_crop/patient001/crop1_ED_gt.npy')

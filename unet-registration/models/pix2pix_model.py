@@ -86,7 +86,7 @@ class Pix2PixModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_MSE_warpimg', 'G_Dice_warpmask', 'G_huber']
+        self.loss_names = ['G_MSE_warpimg', 'G_huber']
         # self.loss_G_3 = self.loss_G_MSE_warpimg + self.loss_G_Dice_warpmask + self.loss_G_huber + self.loss_G_MSE_flow
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = []
@@ -95,11 +95,7 @@ class Pix2PixModel(BaseModel):
         # define networks (both generator and discriminator)
         if opt.dataset == 'ACDC':
             #activation 1:relu 2:softmax 3:tanh
-            self.netG_1 = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-                                            not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, activation=1)
-            self.netG_2 = networks.define_G(2, 4, opt.ngf, opt.netG, opt.norm,
-                                            not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, activation=2)
-            self.netG_3 = networks.define_G(4, 2, opt.ngf, opt.netG, opt.norm,
+            self.netG_3 = networks.define_G(2, 2, opt.ngf, opt.netG, opt.norm,
                                             not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids,
                                             activation=3)
 
@@ -139,7 +135,8 @@ class Pix2PixModel(BaseModel):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         # print("Calling forward")
         #Third Network
-        self.real_ED_ES = torch.cat((self.ED, self.ED_M, self.ES, self.ES_M), 1)
+        # self.real_ED_ES = torch.cat((self.ED, self.ED_M, self.ES, self.ES_M), 1)
+        self.real_ED_ES = torch.cat((self.ED, self.ES), 1)
         self.flow_1 = self.netG_3(self.real_ED_ES)
 
 
@@ -149,10 +146,10 @@ class Pix2PixModel(BaseModel):
         self.warped_img_1 = warp(self.ED, self.flow_1[:,0,:,:], self.flow_1[:,1:,:], interp='bilinear')
         self.warped_mask_1 = warp(self.ED_gt, self.flow_1[:, 0, :, :], self.flow_1[:, 1:, :], interp='nearest')
         self.loss_G_MSE_warpimg = (self.criterionMSE(self.warped_img_1, self.ES) ) * self.opt.lambda_MSE
-        self.loss_G_Dice_warpmask = (self.criterionDice_2(self.warped_mask_1, self.ES_gt) ) * self.opt.lambda_Dice
+        # self.loss_G_Dice_warpmask = (self.criterionDice_2(self.warped_mask_1, self.ES_gt) ) * self.opt.lambda_Dice
         self.loss_G_huber = (huber_loss(self.flow_1)) * self.opt.lambda_huber
         # self.loss_G_MSE_flow = self.criterionMSE(self.flow_1, self.flow_2) * self.opt.lambda_MSE
-        self.loss_G_3 = self.loss_G_MSE_warpimg + self.loss_G_Dice_warpmask + self.loss_G_huber
+        self.loss_G_3 = self.loss_G_MSE_warpimg + self.loss_G_huber
         self.loss_G_3.backward(retain_graph=True)
 
 
@@ -160,7 +157,7 @@ class Pix2PixModel(BaseModel):
 
         self.set_requires_grad(self.netG_3, True)
         self.forward()
-        self.set_requires_grad(self.netG_1, False)
+        # self.set_requires_grad(self.netG_1, False)
 
         self.optimizer_G_3.zero_grad()  # set G's gradients to zero
         self.backward_G_3()  # calculate graidents for G
@@ -172,7 +169,7 @@ class Pix2PixModel(BaseModel):
         with torch.no_grad():
 
             # Third Network
-            self.fake_ED_ES = torch.cat((self.ED, self.ED_M, self.ES, self.ES_M), 1)
+            self.fake_ED_ES = torch.cat((self.ED, self.ES), 1)
             self.flow_2 = self.netG_3(self.fake_ED_ES)
             self.warp_img = warp(self.ED, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='bilinear')
             self.warped_mask = warp(self.ED_gt, self.flow_2[:, 0, :, :], self.flow_2[:, 1:, :], interp='nearest')

@@ -82,6 +82,39 @@ def foward_network(a, b, a_, b_, ed_gt, model):
     return np.concatenate([flow_2, warp_img, warped_mask], axis=1)
 
 
+def flow_to_hsv(opt_flow, max_mag=0.2, white_bg=True):
+    """
+    Encode optical flow to HSV.
+
+    Args:
+        opt_flow: 2D optical flow in (dx, dy) encoding, shape (H, W, 2)
+        max_mag: flow magnitude will be normalised to [0, max_mag]
+
+    Returns:
+        hsv_flow_rgb: HSV encoded flow converted to RGB (for visualisation), same shape as input
+
+    """
+    # convert to polar coordinates
+    mag, ang = cv2.cartToPolar(opt_flow[0,:,:], opt_flow[1,:,:])
+
+    # hsv encoding
+    hsv_flow = np.zeros((opt_flow.shape[1], opt_flow.shape[2], 3))
+    hsv_flow[..., 0] = ang*180/np.pi/2  # hue = angle
+    hsv_flow[..., 1] = 255.0  # saturation = 255
+    mag = 1.3 * mag / max_mag
+    mag[mag>1]=1
+    hsv_flow[..., 2] = 255.0 * mag
+    # (wrong) hsv_flow[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+
+    # convert hsv encoding to rgb for visualisation
+    # ([..., ::-1] converts from BGR to RGB)
+    hsv_flow_rgb = cv2.cvtColor(hsv_flow.astype(np.uint8), cv2.COLOR_HSV2BGR)[..., ::-1]
+    hsv_flow_rgb = hsv_flow_rgb.astype(np.uint8)
+
+    if white_bg:
+        hsv_flow_rgb = 255 - hsv_flow_rgb
+    return hsv_flow_rgb
+
 if __name__ == '__main__':
     opt = TestOptions().parse()  # get test options
     # hard-code some parameters for test
@@ -125,7 +158,7 @@ if __name__ == '__main__':
             spacing_target = list(spacing_target)
             spacing_target[0] = spacing[0]
             image = resize_image(image, spacing, spacing_target).astype(np.float32)
-            image = rescale_intensity(image, (0.5, 99.5))
+            image = rescale_intensity_slice(image, (0.5, 99.5))
 
             src = image
             gt = sitk.ReadImage(os.path.join(patient_root, phase + '_gt.nii.gz'))
@@ -275,10 +308,10 @@ if __name__ == '__main__':
                 probshape = [n_, 4, h_, w_]
                 full_output = np.zeros(probshape)
 
-                full_output[:, :, :window_size, :window_size] += output1
-                full_output[:, :, -window_size:, :window_size] += output2
-                full_output[:, :, :window_size, -window_size:] += output3
-                full_output[:, :, -window_size:, -window_size:] += output4
+                # full_output[:, :, :window_size, :window_size] += output1
+                # full_output[:, :, -window_size:, :window_size] += output2
+                # full_output[:, :, :window_size, -window_size:] += output3
+                # full_output[:, :, -window_size:, -window_size:] += output4
                 full_output[:, :, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += output5
 
                 full_index = np.zeros(probshape)
@@ -287,7 +320,7 @@ if __name__ == '__main__':
                 full_index[:, :, :window_size, -window_size:] += 1
                 full_index[:, :, -window_size:, -window_size:] += 1
                 full_index[:, :, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += 1
-                full_output /= full_index
+                # full_output /= full_index
 
                 c, h, w = src_backup_shape
                 full_output = full_output[:, :, starth:starth + h, startw:startw + w]
@@ -296,6 +329,8 @@ if __name__ == '__main__':
 
 
                 flow_2 = full_output[:, 0:2, :, :].astype(np.float32)
+                flow_2 = resize_image(flow_2, spacing_target, spacing, 3).squeeze()
+                # flow_2 = flow_2.transpose([0,2,3,1])
                 warped_img = full_output[:, 2, :, :].astype(np.float32)
                 warped_mask = full_output[:, 3, :, :].astype(np.float32)
                 warped_img = resize_image(warped_img, spacing_target, spacing, 3).squeeze()
@@ -319,8 +354,13 @@ if __name__ == '__main__':
                     warped_img_slice = warped_img[z, :, :]
                     warped_mask_slice= warped_mask[z, :, :] * 85
 
+                    flow_slice = flow_2[z,:,:,:]
+                    flow_slice = flow_to_hsv(flow_slice)
+
                     merge = np.concatenate([ED_slice, ED_gt_slice, ES_slice, ES_gt_slice, warped_img_slice, warped_mask_slice],
                                            axis=1)
+                    merge = cv2.merge([merge,merge, merge])
+                    merge = np.concatenate([merge, flow_slice], axis=1)
                     cv2.imwrite(os.path.join(output_dir, patient + '_' + phase + '_' + str(z) + '.png'), merge)
 
                 # for i in range(1, 4):

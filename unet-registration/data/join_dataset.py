@@ -39,6 +39,7 @@ def get_epoch_batch(data_list, batch_size, iteration, idx, image_size=192, data_
             # print('  Select {0} {1}'.format(image_name, label_name))
 
             # Read image and label
+            # print(es_name)
             es = np.load(es_name)
             es_gt = np.load(es_gt_name)
             ed = np.load(ed_name)
