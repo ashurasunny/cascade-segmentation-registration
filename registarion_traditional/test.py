@@ -27,14 +27,14 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 import os
-from options.test_options import TestOptions
-from data import create_dataset
-from models import create_model
-from util.visualizer import save_images
-from util import html
-from utils import *
+import numpy as np
+import cv2
+import torch
 import csv
-from models.pix2pix_model import warp
+from utils import *
+import SimpleITK as sitk
+from baseline import *
+
 
 
 def np_categorical_dice(pred, truth, k):
@@ -61,39 +61,108 @@ def MSE(input, target):
     return ((input-target)**2).mean()
 
 
-def foward_network(a, b, a_, b_, ed_gt, model):
-    h, w = a.shape[1:3]
+def foward_network(a, b, c):
+    source = np.pad(a.squeeze(), [4, 4]).transpose([1, 0])
+    target = np.pad(b.squeeze(), [4, 4]).transpose([1, 0])
+    c = np.pad(c.squeeze(), [4, 4]).transpose([1, 0])
 
-    a = np.expand_dims(a, axis=1)
-    gridimg = np.zeros(a.shape).astype(np.float32)
+    device = 'cuda'
+
+    h, w = source.shape
+
+    gridimg = np.zeros(source.shape).astype(np.float32)
     s = 5
     sh = h // s
     sw = w // s
     for i in range(sh):
-        gridimg[:, :,i * s, :] = 255
+        gridimg[i * s, :] = 255
     for i in range(sw):
-        gridimg[:, :, :, i * s] = 255
-    gridimg = torch.from_numpy((gridimg)).to(model.device)
-    a = torch.from_numpy(a).to(model.device)
-    b = np.expand_dims(b, axis=1)
-    b = torch.from_numpy(b).to(model.device)
-    a_ = np.expand_dims(a_, axis=1)
-    a_ = torch.from_numpy(a_).to(model.device)
-    b_ = np.expand_dims(b_, axis=1)
-    b_ = torch.from_numpy(b_).to(model.device)
-    ed_gt = np.expand_dims(ed_gt, axis=1)
-    ed_gt = torch.from_numpy(ed_gt)
+        gridimg[:, i * s] = 255
+    gridimg = torch.from_numpy((gridimg)).to(device).unsqueeze(0).unsqueeze(0)
 
-    model.set_input({'ED':a, 'ES':b, 'ED_gt':ed_gt, 'ED_M':a_, 'ES_M':b_})
-    flow_2, warp_img, warped_mask = model.test()  # run inference
+    level = [4, 2, 1]
+    ux = torch.zeros((h // level[0], w // level[0])).to(device).double()
+    uy = torch.zeros((h // level[0], w // level[0])).to(device).double()
 
-    gridimg = warp(gridimg, flow_2[:, 0, :, :], flow_2[:, 1:, :], interp='bilinear').to('cpu').numpy()
-    # cv2.imwrite('test.png', gridimg[5, :,:, :].squeeze())
+    to1 = 1e-5
+    lambda_ = 0.5
+    theta = 0.1
+    maxIter = 200000
+    taylor = 10
 
-    flow_2 = flow_2.data.to('cpu').numpy()
-    warp_img = warp_img.data.to('cpu').numpy()
-    warped_mask = warped_mask.data.to('cpu').numpy()
-    return np.concatenate([flow_2, warp_img, warped_mask, gridimg], axis=1)
+    # a = time.time()
+
+    for l in level:
+        s = resize(source, (h // l, w // l), 2)
+        t = resize(target, (h // l, w // l), 2)
+        s = torch.from_numpy(s).to(device).double()
+        t = torch.from_numpy(t).to(device).double()
+
+        print(ux.size(), s.size())
+        diff_t = []
+        for i_t in range(taylor):
+
+            print('taylor:', i_t)
+            ux, uy = optimize(ux, uy, s, t, maxIter, lambda_, to1, theta, device)
+            warped_s = warp(s.unsqueeze(0).unsqueeze(0), ux.unsqueeze(0), uy.unsqueeze(0))
+            diff_t.append(float(torch.sum(torch.abs(warped_s - t))))
+            if i_t > 0:
+                p = abs(diff_t[-2] - diff_t[-1]) * 100 / diff_t[-2]
+                if p > 2:
+                    break
+        if l != 1:
+            ux = ux.data.cpu().numpy()
+            h_, w_ = ux.shape
+            ux = torch.from_numpy(resize(ux, [h_ * 2, w_ * 2], 2)).cuda()
+            uy = uy.data.cpu().numpy()
+            uy = torch.from_numpy(resize(uy, [h_ * 2, w_ * 2], 2)).cuda()
+
+    # test = tdct.idct_2d(tdct.dct_2d(source))
+    # diff = source - test
+
+    # b = time.time()
+    # print('cost time:', b - a)
+    ux = ux.unsqueeze(0)
+    uy = uy.unsqueeze(0)
+
+
+
+    source = torch.from_numpy(source).cuda()
+    target = torch.from_numpy(target).cuda()
+
+    target = target.unsqueeze(0).unsqueeze(0)
+    source = source.unsqueeze(0).unsqueeze(0)
+    warp_img = warp(source.double(), ux, uy)
+
+    c = torch.from_numpy(c).cuda()
+    c = c.unsqueeze(0).unsqueeze(0)
+
+    c = warp(c.double(), ux, uy)
+
+    gridimg = warp(gridimg.double(), ux, uy, interp='bilinear').to('cpu').numpy().squeeze(0).transpose((0,2,1))
+
+
+    warp_img = warp_img.data.cpu().numpy().squeeze().transpose((1,0))
+    c = c.data.cpu().numpy().squeeze().transpose((1,0))
+    # source = source.data.cpu().numpy().squeeze()
+    # target = target.data.cpu().numpy().squeeze()
+    warp_img = rescale_intensity(warp_img) * 255
+    # es = rescale_intensity(es) * 255
+
+    ux = ux.data.cpu().numpy()
+    uy = uy.data.cpu().numpy()
+    flow = np.stack([ux, uy]).squeeze()
+    flow_rgb = flow_to_hsv(flow)
+
+    outputlist = np.concatenate([flow, np.expand_dims(warp_img, axis=0),
+                           np.expand_dims(c, axis=0), gridimg], axis=0)
+    return outputlist[:, 4:-4, 4:-4]
+
+    # a = np.concatenate((source * 255, target * 255, warp_img), 1)
+    # a = cv2.merge([a,a,a])
+    # a = np.concatenate((a, flow), 1)
+
+    # cv2.imwrite('test.png', a)
 
 
 def flow_to_hsv(opt_flow, max_mag=0.2, white_bg=True):
@@ -125,32 +194,20 @@ def flow_to_hsv(opt_flow, max_mag=0.2, white_bg=True):
     hsv_flow_rgb = cv2.cvtColor(hsv_flow.astype(np.uint8), cv2.COLOR_HSV2BGR)[..., ::-1]
     hsv_flow_rgb = hsv_flow_rgb.astype(np.uint8)
 
+
     if white_bg:
         hsv_flow_rgb = 255 - hsv_flow_rgb
     return hsv_flow_rgb
 
 if __name__ == '__main__':
-    opt = TestOptions().parse()  # get test options
-    # hard-code some parameters for test
-    opt.num_threads = 0   # test code only supports num_threads = 1
-    opt.batch_size = 1    # test code only supports batch_size = 1
-    opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    opt.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    opt.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
-    # dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
 
-    # create a website
-    web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.epoch))  # define the website directory
-    webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.epoch))
-    # test with eval mode. This only affects layers like batchnorm and dropout.
-    # For [pix2pix]: we use batchnorm and dropout in the original pix2pix. You can experiment it with and without eval() mode.
-    # For [CycleGAN]: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
     output_dir = './output'
+    dataroot = '/data/private/xxw993/data/validation'
     spacing_target = (10, 1.25, 1.25)
     window_size = 256
     stride = 128
     batch_size = 1
-    data_list = os.listdir(opt.dataroot)
+    data_list = os.listdir(dataroot)
     hausdorffcomputer = sitk.HausdorffDistanceImageFilter()
 
     test_list = []
@@ -160,7 +217,7 @@ if __name__ == '__main__':
         #     print('nnnnn', patient)
         #     continue
         print(patient)
-        patient_root = os.path.join(opt.dataroot, patient)
+        patient_root = os.path.join(dataroot, patient)
         temp_list = []
         for phase in ['ED', 'ES']:
             # read iamge
@@ -283,14 +340,11 @@ if __name__ == '__main__':
         test_list.append(temp_list)
 
 
-    csv_name = './' + opt.name + '.csv'
+    csv_name = './' + 'H1_05' + '.csv'
     with open(csv_name, 'w+') as f:
         writer = csv.writer(f)
 
-        for iter in range(5,201 ,5):
-            opt.load_iter = iter
-            model = create_model(opt)  # create a model given opt.model and other options
-            model.setup(opt)  # regular setup: load and print networks; create schedulers
+        for iter in range(200,201 ,5):
             instance_dice_ED = {0: 0, 1: 0, 2: 0, 3: 0}
             instance_dice_ES = {0: 0, 1: 0, 2: 0, 3: 0}
             instance_dice_wp = {0: 0, 1: 0, 2: 0, 3: 0}
@@ -299,8 +353,7 @@ if __name__ == '__main__':
             instance_HD_wp = {0: 0, 1: 0, 2: 0, 3: 0}
             instance_MSE = 0
             instance_diceM = 0
-            if True:
-                model.eval()
+
             for index in range(len(test_list)):
                 # if not '080' in patient:
                 #     continue
@@ -324,34 +377,39 @@ if __name__ == '__main__':
 
 
 
-                output1 = foward_network(ED_imgs[0][0], ES_imgs[0][0], ED_imgs[1][0], ES_imgs[1][0], ED_imgs[5][0],model)
-                output2 = foward_network(ED_imgs[0][1], ES_imgs[0][1], ED_imgs[1][1], ES_imgs[1][1], ED_imgs[5][1],model)
-                output3 = foward_network(ED_imgs[0][2], ES_imgs[0][2], ED_imgs[1][2], ES_imgs[1][2], ED_imgs[5][2],model)
-                output4 = foward_network(ED_imgs[0][3], ES_imgs[0][3], ED_imgs[1][3], ES_imgs[1][3], ED_imgs[5][3],model)
-                output5 = foward_network(ED_imgs[0][4], ES_imgs[0][4], ED_imgs[1][4], ES_imgs[1][4], ED_imgs[5][4],model)
+                # output1 = foward_network(ED_imgs[0][0], ES_imgs[0][0], ED_imgs[1][0], ES_imgs[1][0], ED_imgs[5][0],model)
+                # output2 = foward_network(ED_imgs[0][1], ES_imgs[0][1], ED_imgs[1][1], ES_imgs[1][1], ED_imgs[5][1],model)
+                # output3 = foward_network(ED_imgs[0][2], ES_imgs[0][2], ED_imgs[1][2], ES_imgs[1][2], ED_imgs[5][2],model)
+                # output4 = foward_network(ED_imgs[0][3], ES_imgs[0][3], ED_imgs[1][3], ES_imgs[1][3], ED_imgs[5][3],model)
+                output5 = foward_network(ED_imgs[0][4], ES_imgs[0][4], ED_imgs[5][4])
 
                 n_, h_, w_ = src_shape
-                probshape = [n_, 5, h_, w_]
+                probshape = [5, h_, w_]
                 full_output = np.zeros(probshape)
 
                 # full_output[:, :, :window_size, :window_size] += output1
                 # full_output[:, :, -window_size:, :window_size] += output2
                 # full_output[:, :, :window_size, -window_size:] += output3
                 # full_output[:, :, -window_size:, -window_size:] += output4
-                full_output[:, :, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += output5
+                full_output[:, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += output5
 
-                full_index = np.zeros(probshape)
-                full_index[:, :, :window_size, :window_size] += 1
-                full_index[:, :, -window_size:, :window_size] += 1
-                full_index[:, :, :window_size, -window_size:] += 1
-                full_index[:, :, -window_size:, -window_size:] += 1
-                full_index[:, :, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += 1
+                # full_index = np.zeros(probshape)
+                # full_index[:, :, :window_size, :window_size] += 1
+                # full_index[:, :, -window_size:, :window_size] += 1
+                # full_index[:, :, :window_size, -window_size:] += 1
+                # full_index[:, :, -window_size:, -window_size:] += 1
+                # full_index[:, :, c_starth:c_starth + window_size, c_startw:c_startw + window_size] += 1
                 # full_output /= full_index
 
                 c, h, w = src_backup_shape
+                full_output = np.expand_dims(full_output, axis=0)
                 full_output = full_output[:, :, starth:starth + h, startw:startw + w]
 
                 # np.concatenate([fake_ED_M, fake_ES_M, fake_ED_2, fake_ES_2, flow_2, warp_img, warped_mask], axis=1)
+
+                # outputlist = np.concatenate([flow, np.expand_dims(source, axis=0), np.expand_dims(target, axis=0),
+                #                              np.expand_dims(warp_img, axis=0),
+                #                              np.expand_dims(c, axis=0), flow_rgb.transpose(2, 0, 1)], axis=0)
 
 
                 flow_2 = full_output[:, 0:2, :, :].astype(np.float32)

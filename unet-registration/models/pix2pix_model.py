@@ -16,8 +16,10 @@ def warp(source, offset_w, offset_h, interp='bilinear'):
 
     # (N, 1, H, W) -> (N, H, W)
     #    print('################### offset_h: {}'.format(offset_h.shape))
-    offset_h = offset_h.squeeze(1)
-    offset_w = offset_w.squeeze(1)
+    if offset_h.shape[1] == 1:
+        offset_h = offset_h.squeeze(1)
+    if offset_w.shape[1] == 1:
+        offset_w = offset_w.squeeze(1)
     #    print('################### offset_h: {}'.format(offset_h.shape))
 
     # (h,w) + (N, h, w) add by broadcasting
@@ -146,10 +148,10 @@ class Pix2PixModel(BaseModel):
         self.warped_img_1 = warp(self.ED, self.flow_1[:,0,:,:], self.flow_1[:,1:,:], interp='bilinear')
         self.warped_mask_1 = warp(self.ED_gt, self.flow_1[:, 0, :, :], self.flow_1[:, 1:, :], interp='nearest')
         self.loss_G_MSE_warpimg = (self.criterionMSE(self.warped_img_1, self.ES) ) * self.opt.lambda_MSE
-        # self.loss_G_Dice_warpmask = (self.criterionDice_2(self.warped_mask_1, self.ES_gt) ) * self.opt.lambda_Dice
+        self.loss_G_Dice_warpmask = (self.criterionDice_2(self.warped_mask_1, self.ES_gt) ) * self.opt.lambda_Dice
         self.loss_G_huber = (huber_loss(self.flow_1)) * self.opt.lambda_huber
         # self.loss_G_MSE_flow = self.criterionMSE(self.flow_1, self.flow_2) * self.opt.lambda_MSE
-        self.loss_G_3 = self.loss_G_MSE_warpimg + self.loss_G_huber
+        self.loss_G_3 = self.loss_G_MSE_warpimg + self.loss_G_huber +  self.loss_G_Dice_warpmask
         self.loss_G_3.backward(retain_graph=True)
 
 
